@@ -8,4 +8,4 @@ Replicated SQLite instances made easy
 
 To that I say:
 
-![sqlite my beloved](/assets/sqlite3-my-beloved.png)
+![sqlite my beloved](/assets/sqlite-my-beloved.png)
