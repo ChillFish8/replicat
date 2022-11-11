@@ -8,5 +8,3 @@ pub enum LogEntry {
     Delete { key: String },
     DeleteMany { keys: Vec<String> },
 }
-
-
