@@ -5,9 +5,9 @@ use std::path::Path;
 use std::ptr;
 use std::ptr::NonNull;
 
-use rusqlite::{Connection, ffi, OptionalExtension, Params, Row};
-use flume::{Sender, self, Receiver};
+use flume::{self, Receiver, Sender};
 use futures::channel::oneshot;
+use rusqlite::{ffi, Connection, OptionalExtension, Params, Row};
 
 type Task = Box<dyn FnOnce(&mut Connection) + Send + 'static>;
 
@@ -40,7 +40,11 @@ impl StorageHandle {
     }
 
     /// Execute a SQL statement with some provided parameters.
-    pub async fn execute<P>(&self, sql: impl AsRef<str>, params: P) -> rusqlite::Result<usize>
+    pub async fn execute<P>(
+        &self,
+        sql: impl AsRef<str>,
+        params: P,
+    ) -> rusqlite::Result<usize>
     where
         P: Params + Clone + Send + 'static,
     {
@@ -48,11 +52,16 @@ impl StorageHandle {
         self.submit_task(move |conn| {
             let mut prepared = conn.prepare_cached(&sql)?;
             prepared.execute(params.clone())
-        }).await
+        })
+        .await
     }
 
     /// Fetch a single row from a given SQL statement with some provided parameters.
-    pub async fn fetch_one<P, T>(&self, sql: impl AsRef<str>, params: P) -> rusqlite::Result<Option<T>>
+    pub async fn fetch_one<P, T>(
+        &self,
+        sql: impl AsRef<str>,
+        params: P,
+    ) -> rusqlite::Result<Option<T>>
     where
         P: Params + Send + 'static,
         T: FromRow + Send + 'static,
@@ -62,11 +71,16 @@ impl StorageHandle {
         self.submit_task(move |conn| {
             let mut prepared = conn.prepare_cached(&sql)?;
             prepared.query_row(params, T::from_row).optional()
-        }).await
+        })
+        .await
     }
 
     /// Fetch a all rows from a given SQL statement with some provided parameters.
-    pub async fn fetch_all<P, T>(&self, sql: impl AsRef<str>, params: P) -> rusqlite::Result<Vec<T>>
+    pub async fn fetch_all<P, T>(
+        &self,
+        sql: impl AsRef<str>,
+        params: P,
+    ) -> rusqlite::Result<Vec<T>>
     where
         P: Params + Send + 'static,
         T: FromRow + Send + 'static,
@@ -83,7 +97,8 @@ impl StorageHandle {
             }
 
             Ok(rows)
-        }).await
+        })
+        .await
     }
 
     /// Submits a writer task to execute.
@@ -125,7 +140,6 @@ impl StorageHandle {
     }
 }
 
-
 /// A helper trait for converting between a Row reference and the given type.
 ///
 /// This is required due to the nature of rows being tied to the database connection
@@ -138,18 +152,14 @@ async fn setup_database(path: impl AsRef<Path>) -> rusqlite::Result<Sender<Task>
     let path = path.as_ref().to_path_buf();
     let (tx, rx) = flume::bounded(CAPACITY);
 
-    tokio::task::spawn_blocking(move || setup_disk_handle(
-        &path,
-        rx,
-    )).await.expect("spawn background runner")?;
+    tokio::task::spawn_blocking(move || setup_disk_handle(&path, rx))
+        .await
+        .expect("spawn background runner")?;
 
     Ok(tx)
 }
 
-fn setup_disk_handle(
-    path: &Path,
-    tasks: Receiver<Task>,
-) -> rusqlite::Result<()> {
+fn setup_disk_handle(path: &Path, tasks: Receiver<Task>) -> rusqlite::Result<()> {
     let disk = Connection::open(path)?;
     std::thread::spawn(move || run_tasks(disk, tasks));
 
@@ -162,7 +172,6 @@ fn run_tasks(mut conn: Connection, tasks: Receiver<Task>) {
         (task)(&mut conn);
     }
 }
-
 
 #[derive(Debug)]
 pub struct SqliteMemory {
@@ -180,7 +189,7 @@ impl SqliteMemory {
             let ptr: *mut c_void = ffi::sqlite3_malloc64(size as u64);
 
             if ptr.is_null() {
-                return Err(no_memory())
+                return Err(no_memory());
             }
 
             ptr::copy_nonoverlapping(buf.as_ptr(), ptr.cast(), size);
@@ -211,7 +220,7 @@ unsafe impl Sync for SqliteMemory {}
 
 impl Deref for SqliteMemory {
     type Target = [u8];
-    
+
     fn deref(&self) -> &Self::Target {
         unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.size) }
     }
@@ -223,10 +232,7 @@ impl Drop for SqliteMemory {
     }
 }
 
-
-fn create_memory_view(
-    disk: &Connection,
-) -> rusqlite::Result<Connection> {
+fn create_memory_view(disk: &Connection) -> rusqlite::Result<Connection> {
     let mut view = Connection::open_in_memory()?;
 
     // We're temporary and in memory, we can disable essentially all durability settings.
@@ -252,14 +258,17 @@ fn serialize_db(conn: &Connection) -> rusqlite::Result<SqliteMemory> {
         if ptr.is_null() || size == -1 {
             // It doesn't matter if `ptr` is null or not.
             ffi::sqlite3_free(ptr.cast());
-            return Err(no_memory())
+            return Err(no_memory());
         }
 
-         Ok(SqliteMemory::from_raw(ptr, size as usize))
+        Ok(SqliteMemory::from_raw(ptr, size as usize))
     }
 }
 
-fn deserialize_db(write_to: &mut Connection, data: SqliteMemory) -> rusqlite::Result<()> {
+fn deserialize_db(
+    write_to: &mut Connection,
+    data: SqliteMemory,
+) -> rusqlite::Result<()> {
     let data = ManuallyDrop::new(data);
 
     unsafe {
@@ -274,15 +283,15 @@ fn deserialize_db(write_to: &mut Connection, data: SqliteMemory) -> rusqlite::Re
             data.ptr.as_ptr(),
             data.size as i64,
             data.size as i64,
-            (ffi::SQLITE_DESERIALIZE_FREEONCLOSE
-                | ffi::SQLITE_DESERIALIZE_RESIZEABLE) as u32
+            (ffi::SQLITE_DESERIALIZE_FREEONCLOSE | ffi::SQLITE_DESERIALIZE_RESIZEABLE)
+                as u32,
         );
 
         if status != ffi::SQLITE_OK {
             return Err(rusqlite::Error::SqliteFailure(
                 ffi::Error::new(status),
-                Some("Unable to create memory view for database".to_string())
-            ))
+                Some("Unable to create memory view for database".to_string()),
+            ));
         }
     }
 
@@ -292,14 +301,14 @@ fn deserialize_db(write_to: &mut Connection, data: SqliteMemory) -> rusqlite::Re
 fn no_memory() -> rusqlite::Error {
     rusqlite::Error::SqliteFailure(
         ffi::Error::new(ffi::SQLITE_NOMEM),
-        Some("Failed to allocate buffer, is the system out of memory?".to_string())
+        Some("Failed to allocate buffer, is the system out of memory?".to_string()),
     )
 }
-
 
 #[cfg(test)]
 mod tests {
     use std::env::temp_dir;
+
     use super::*;
 
     fn create_test_connection() -> Connection {
@@ -311,9 +320,13 @@ mod tests {
                 data  BLOB
             )",
             (), // empty list of parameters.
-        ).expect("create table");
-        conn.execute("INSERT INTO person (id, name, data) VALUES (1, 'cf8', 'tada')", ())
-            .expect("insert person");
+        )
+        .expect("create table");
+        conn.execute(
+            "INSERT INTO person (id, name, data) VALUES (1, 'cf8', 'tada')",
+            (),
+        )
+        .expect("insert person");
 
         conn
     }
@@ -322,7 +335,11 @@ mod tests {
     fn test_serialize_db() {
         let conn = create_test_connection();
         let res = serialize_db(&conn);
-        assert!(res.is_ok(), "Expected serialization to pass. Res: {:?}", res);
+        assert!(
+            res.is_ok(),
+            "Expected serialization to pass. Res: {:?}",
+            res
+        );
     }
 
     #[test]
@@ -336,25 +353,35 @@ mod tests {
         // Try deserialize using just the memory we get from sqlite.
         let mut write_to = Connection::open_in_memory().unwrap();
         let res = deserialize_db(&mut write_to, data);
-        assert!(res.is_ok(), "Expected raw memory deserialization to pass. Res: {:?}", res);
+        assert!(
+            res.is_ok(),
+            "Expected raw memory deserialization to pass. Res: {:?}",
+            res
+        );
 
         // Try deserialize using the memory
         let data = SqliteMemory::from_slice(&data_copy).expect("Create memory.");
         let mut write_to = Connection::open_in_memory().unwrap();
         let res = deserialize_db(&mut write_to, data);
-        assert!(res.is_ok(), "Expected owned memory deserialization to pass. Res: {:?}", res);
+        assert!(
+            res.is_ok(),
+            "Expected owned memory deserialization to pass. Res: {:?}",
+            res
+        );
 
-        let (id, name, data) = write_to.query_row(
-            "SELECT id, name, data FROM person WHERE id = 1;",
-            (),
-            |row| {
-                Ok((
-                    row.get::<_, i32>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?
-                ))
-            }
-        ).expect("query database");
+        let (id, name, data) = write_to
+            .query_row(
+                "SELECT id, name, data FROM person WHERE id = 1;",
+                (),
+                |row| {
+                    Ok((
+                        row.get::<_, i32>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .expect("query database");
 
         assert_eq!(id, 1, "Ids should be the same");
         assert_eq!(name, "cf8".to_string(), "Name should be the same");
@@ -372,24 +399,30 @@ mod tests {
                 data  BLOB
             )",
             (), // empty list of parameters.
-        ).expect("create table");
+        )
+        .expect("create table");
 
-        conn.execute("INSERT INTO person (id, name, data) VALUES (1, 'cf8', 'tada')", ())
-            .expect("insert person");
+        conn.execute(
+            "INSERT INTO person (id, name, data) VALUES (1, 'cf8', 'tada')",
+            (),
+        )
+        .expect("insert person");
 
         let view = create_memory_view(&conn).expect("create memory view");
 
-        let (id, name, data) = view.query_row(
-            "SELECT id, name, data FROM person WHERE id = 1;",
-            (),
-            |row| {
-                Ok((
-                    row.get::<_, i32>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?
-                ))
-            }
-        ).expect("query database");
+        let (id, name, data) = view
+            .query_row(
+                "SELECT id, name, data FROM person WHERE id = 1;",
+                (),
+                |row| {
+                    Ok((
+                        row.get::<_, i32>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .expect("query database");
 
         assert_eq!(id, 1, "Ids should be the same");
         assert_eq!(name, "cf8".to_string(), "Name should be the same");
@@ -407,15 +440,31 @@ mod tests {
                 data  BLOB
             )",
             (), // empty list of parameters.
-        ).expect("create table");
+        )
+        .expect("create table");
 
-        disk.execute("INSERT INTO person (id, name, data) VALUES (1, 'cf8', 'tada')", ())
-            .expect("insert person");
+        disk.execute(
+            "INSERT INTO person (id, name, data) VALUES (1, 'cf8', 'tada')",
+            (),
+        )
+        .expect("insert person");
 
         let view = create_memory_view(&disk).expect("create memory view");
-        view.execute("INSERT INTO person (id, name, data) VALUES (2, 'cf9', 'tada')", ()).expect("Add and resize");
-        view.execute("INSERT INTO person (id, name, data) VALUES (3, 'cf10', 'tada')", ()).expect("Add and resize");
-        view.execute("INSERT INTO person (id, name, data) VALUES (4, 'cf11', 'tada')", ()).expect("Add and resize");
+        view.execute(
+            "INSERT INTO person (id, name, data) VALUES (2, 'cf9', 'tada')",
+            (),
+        )
+        .expect("Add and resize");
+        view.execute(
+            "INSERT INTO person (id, name, data) VALUES (3, 'cf10', 'tada')",
+            (),
+        )
+        .expect("Add and resize");
+        view.execute(
+            "INSERT INTO person (id, name, data) VALUES (4, 'cf11', 'tada')",
+            (),
+        )
+        .expect("Add and resize");
     }
 
     #[tokio::test]
@@ -470,7 +519,10 @@ mod tests {
         assert!(res.is_none(), "Expected no rows to be returned.");
 
         handle
-            .execute("INSERT INTO person (id, name, data) VALUES (1, 'cf8', 'tada');", ())
+            .execute(
+                "INSERT INTO person (id, name, data) VALUES (1, 'cf8', 'tada');",
+                (),
+            )
             .await
             .expect("Insert row");
 
@@ -480,23 +532,41 @@ mod tests {
             .expect("execute statement");
         assert_eq!(
             res,
-            Some(Person { id: 1, name: "cf8".to_string(), data: "tada".to_string() }),
+            Some(Person {
+                id: 1,
+                name: "cf8".to_string(),
+                data: "tada".to_string()
+            }),
         );
 
         handle
-            .execute("INSERT INTO person (id, name, data) VALUES (2, 'cf6', 'tada2');", ())
+            .execute(
+                "INSERT INTO person (id, name, data) VALUES (2, 'cf6', 'tada2');",
+                (),
+            )
             .await
             .expect("Insert row");
 
         let res = handle
-            .fetch_all::<_, Person>("SELECT id, name, data FROM person ORDER BY id ASC;", ())
+            .fetch_all::<_, Person>(
+                "SELECT id, name, data FROM person ORDER BY id ASC;",
+                (),
+            )
             .await
             .expect("execute statement");
         assert_eq!(
             res,
             vec![
-                Person { id: 1, name: "cf8".to_string(), data: "tada".to_string() },
-                Person { id: 2, name: "cf6".to_string(), data: "tada2".to_string() },
+                Person {
+                    id: 1,
+                    name: "cf8".to_string(),
+                    data: "tada".to_string()
+                },
+                Person {
+                    id: 2,
+                    name: "cf6".to_string(),
+                    data: "tada2".to_string()
+                },
             ],
         );
     }
