@@ -51,7 +51,7 @@ static REPLICAT_KV_TABLE: &str = r#"
 "#;
 static REPLICAT_RAFT_LOGS_TABLE: &str = r#"
     CREATE TABLE IF NOT EXISTS replicat_raft_logs (
-        log_index BIGINT PRIMARY KEY,
+        log_index BIGINT,
         node_id BIGINT,
         term BIGINT,
         entry BLOB
@@ -232,6 +232,25 @@ impl RaftStore {
     /// The `base_path` must already exist at the time of opening the store.
     pub async fn open_with_mem_state(base_path: &Path) -> Result<Self, anyhow::Error> {
         Self::open(base_path, Some(":memory:")).await
+    }
+
+    #[cfg(test)]
+    /// Open a new [RaftStore] instance with a temporary directory for testing.
+    pub async fn open_for_test_mem_state() -> Result<Self, anyhow::Error> {
+        //let path = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let path = Path::new("./mem-states");
+        tokio::fs::create_dir_all(&path).await?;
+        Self::open_with_mem_state(&path).await
+    }
+
+    #[cfg(test)]
+    /// Open a new [RaftStore] instance with a temporary directory for testing.
+    pub async fn open_for_test_disk_state() -> Result<Self, anyhow::Error> {
+        //let path = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let path = Path::new("./disk-states");
+        tokio::fs::create_dir_all(&path).await?;
+        let disk_state_path = path.join("data.db");
+        Self::open(&path, Some(disk_state_path)).await
     }
 
     async fn get_last_purged_log_id(&self) -> StorageResult<Option<LogId<NodeId>>> {
@@ -617,6 +636,8 @@ fn create_snapshot_err(e: impl Display) -> StorageError<NodeId> {
 async fn create_state_machine(
     data: StorageHandle,
 ) -> Result<StateMachine, anyhow::Error> {
+    data.execute(REPLICAT_KV_TABLE, ()).await?;
+
     let last_applied_log = data
         .fetch_one::<_, (Vec<u8>,)>(REPLICAT_KV_SELECT_VALUE, (LAST_LOG_KEY,))
         .await?
@@ -657,4 +678,53 @@ async fn setup_snapshot_store(conn: &StorageHandle) -> rusqlite::Result<()> {
     conn.execute(REPLICAT_KV_TABLE, ()).await?;
 
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use async_trait::async_trait;
+    use openraft::testing::StoreBuilder;
+    use super::*;
+
+    struct RaftStoreMemStateBuilder {}
+
+    #[async_trait]
+    impl StoreBuilder<TypeConfig, Arc<RaftStore>> for RaftStoreMemStateBuilder {
+        async fn run_test<Fun, Ret, Res>(&self, t: Fun) -> StorageResult<Ret>
+        where
+            Res: Future<Output = StorageResult<Ret>> + Send,
+            Fun: Fn(Arc<RaftStore>) -> Res + Sync + Send
+        {
+            let store = RaftStore::open_for_test_mem_state().await.expect("create raft store");
+            t(store.into()).await
+        }
+    }
+
+    struct RaftStoreDiskStateBuilder {}
+
+    #[async_trait]
+    impl StoreBuilder<TypeConfig, Arc<RaftStore>> for RaftStoreDiskStateBuilder {
+        async fn run_test<Fun, Ret, Res>(&self, t: Fun) -> StorageResult<Ret>
+        where
+            Res: Future<Output = StorageResult<Ret>> + Send,
+            Fun: Fn(Arc<RaftStore>) -> Res + Sync + Send
+        {
+            let store = RaftStore::open_for_test_disk_state().await.expect("create raft store");
+            t(store.into()).await
+        }
+    }
+
+    #[test]
+    pub fn test_raft_store_mem_state() -> anyhow::Result<()> {
+        openraft::testing::Suite::test_all(RaftStoreMemStateBuilder {})?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_raft_store_disk_state() -> anyhow::Result<()> {
+        openraft::testing::Suite::test_all(RaftStoreDiskStateBuilder {})?;
+        Ok(())
+    }
 }
