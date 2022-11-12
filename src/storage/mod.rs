@@ -34,7 +34,7 @@ impl StorageHandle {
         Self::open(":memory:").await
     }
 
-    /// Contructs a storage handle from a existing tasks TX.
+    /// Creates a storage handle from a existing tasks TX.
     fn from_tasks(tx: Sender<Task>) -> Self {
         Self { tx }
     }
