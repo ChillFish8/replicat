@@ -7,11 +7,14 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-openraft = "0.7.3"
 thiserror = "1"
 flume = "0.10.14"
 futures = "0.3.25"
+async-trait = "0.1.58"
+rmp-serde = "1.1.1"
+parking_lot = "0.12.1"
 
+openraft = { git = "https://github.com/datafuselabs/openraft.git", rev = "cb2985", features = ["serde"] }
 tokio = { version = "1", features = ["rt"] }
 rusqlite = { version = "0.28.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

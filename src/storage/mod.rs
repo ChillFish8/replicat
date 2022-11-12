@@ -1,4 +1,6 @@
 mod from_row_impl;
+mod raft;
+pub mod params;
 
 use std::ffi::c_void;
 use std::mem::ManuallyDrop;
@@ -10,6 +12,8 @@ use std::ptr::NonNull;
 use flume::{self, Receiver, Sender};
 use futures::channel::oneshot;
 use rusqlite::{ffi, Connection, OptionalExtension, Params, Row};
+
+pub use raft::{StateMachine, Request, Response, TypeConfig, RaftStore};
 
 type Task = Box<dyn FnOnce(&mut Connection) + Send + 'static>;
 
@@ -57,7 +61,7 @@ impl StorageHandle {
         let sql = sql.as_ref().to_string();
         self.submit_task(move |conn| {
             let mut prepared = conn.prepare_cached(&sql)?;
-            prepared.execute(params.clone())
+            prepared.execute(params)
         })
         .await
     }
