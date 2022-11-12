@@ -372,43 +372,6 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_empty_db() {
-        let conn = Connection::open_in_memory().expect("open db in memory");
-        let res = serialize_db(&conn);
-        assert!(
-            res.is_ok(),
-            "Expected serialization to pass. Res: {:?}",
-            res
-        );
-    }
-
-
-    #[test]
-    fn test_deserialize_empty_db() {
-        let conn = Connection::open_in_memory().expect("open db in memory");
-        let data = serialize_db(&conn).expect("serialize db");
-
-        let data_copy = data.to_vec();
-        let mut write_to = Connection::open_in_memory().unwrap();
-        let res = deserialize_db(&mut write_to, data);
-        assert!(
-            res.is_ok(),
-            "Expected raw memory deserialization to pass. Res: {:?}",
-            res
-        );
-
-        // Try deserialize using the memory
-        let data = SqliteMemory::from_slice(&data_copy).expect("Create memory.");
-        let mut write_to = Connection::open_in_memory().unwrap();
-        let res = deserialize_db(&mut write_to, data);
-        assert!(
-            res.is_ok(),
-            "Expected owned memory deserialization to pass. Res: {:?}",
-            res
-        );
-    }
-
-    #[test]
     fn test_deserialize_db() {
         let conn = create_test_connection();
         let data = serialize_db(&conn).expect("Serialize database");
