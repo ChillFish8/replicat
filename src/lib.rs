@@ -1,14 +1,14 @@
 mod storage;
 
 pub use storage::{
-    FromRow, 
-    StorageHandle,
-    StateMachine,
-    Response, 
-    Request, 
+    FromRow,
     RaftStore,
-    TypeConfig,
+    Request,
+    Response,
     SqliteMemory,
+    StateMachine,
+    StorageHandle,
+    TypeConfig,
 };
 
 pub type NodeId = u64;

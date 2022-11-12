@@ -1,5 +1,5 @@
-use rusqlite::Row;
 use rusqlite::types::FromSql;
+use rusqlite::Row;
 
 use crate::FromRow;
 

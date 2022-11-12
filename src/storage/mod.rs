@@ -1,6 +1,6 @@
 mod from_row_impl;
-mod raft;
 pub mod params;
+mod raft;
 
 use std::ffi::c_void;
 use std::mem::ManuallyDrop;
@@ -11,9 +11,8 @@ use std::ptr::NonNull;
 
 use flume::{self, Receiver, Sender};
 use futures::channel::oneshot;
+pub use raft::{RaftStore, Request, Response, StateMachine, TypeConfig};
 use rusqlite::{ffi, Connection, OptionalExtension, Params, Row};
-
-pub use raft::{StateMachine, Request, Response, TypeConfig, RaftStore};
 
 type Task = Box<dyn FnOnce(&mut Connection) + Send + 'static>;
 
@@ -152,12 +151,13 @@ impl StorageHandle {
     ///
     /// This method returns `None` if the database is empty.
     pub async fn serialize(&self) -> rusqlite::Result<Option<SqliteMemory>> {
-        let is_empty = self.fetch_one::<_, (String,)>("SELECT name FROM sqlite_master;", ())
+        let is_empty = self
+            .fetch_one::<_, (String,)>("SELECT name FROM sqlite_master;", ())
             .await?
             .is_none();
 
         if is_empty {
-            return Ok(None)
+            return Ok(None);
         }
 
         let mem = self.submit_task(|conn| serialize_db(conn)).await?;

@@ -1,6 +1,6 @@
-use rusqlite::ToSql;
 use rusqlite::types::{ToSqlOutput, Value};
-use serde::{Serialize, Deserialize};
+use rusqlite::ToSql;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransportableParam {
@@ -22,7 +22,7 @@ impl ToSql for TransportableParam {
             TransportableParam::String(v) => Value::Text(v.clone()),
             TransportableParam::Bytes(v) => Value::Blob(v.clone()),
         };
-        
+
         Ok(ToSqlOutput::Owned(val))
     }
 }
