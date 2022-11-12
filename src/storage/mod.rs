@@ -1,3 +1,5 @@
+mod from_row_impl;
+
 use std::ffi::c_void;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
@@ -14,6 +16,10 @@ type Task = Box<dyn FnOnce(&mut Connection) + Send + 'static>;
 const CAPACITY: usize = 10;
 
 #[derive(Debug, Clone)]
+/// A asynchronous wrapper around a SQLite database.
+///
+/// These operations will be ran in a background thread preventing
+/// any IO operations from blocking the async context.
 pub struct StorageHandle {
     tx: Sender<Task>,
 }
@@ -135,8 +141,31 @@ impl StorageHandle {
         Ok(Self::from_tasks(tx))
     }
 
-    pub async fn serialize(&self) -> rusqlite::Result<SqliteMemory> {
-        self.submit_task(|conn| serialize_db(conn)).await
+    /// Serialize the database contents into a memory buffer.
+    ///
+    /// This buffer can be used to create a new copy of the database or be
+    /// sent across a network.
+    ///
+    /// This method returns `None` if the database is empty.
+    pub async fn serialize(&self) -> rusqlite::Result<Option<SqliteMemory>> {
+        let is_empty = self.fetch_one::<_, (String,)>("SELECT name FROM sqlite_master;", ())
+            .await?
+            .is_none();
+
+        if is_empty {
+            return Ok(None)
+        }
+
+        let mem = self.submit_task(|conn| serialize_db(conn)).await?;
+
+        Ok(Some(mem))
+    }
+
+    /// Loads an existing database state from the given buffer/memory.
+    ///
+    /// The buffer can be obtained by calling `serialize` on an existing database.
+    pub async fn load_from_serialized(&self, mem: SqliteMemory) -> rusqlite::Result<()> {
+        self.submit_task(|conn| deserialize_db(conn, mem)).await
     }
 }
 
@@ -338,6 +367,43 @@ mod tests {
         assert!(
             res.is_ok(),
             "Expected serialization to pass. Res: {:?}",
+            res
+        );
+    }
+
+    #[test]
+    fn test_serialize_empty_db() {
+        let conn = Connection::open_in_memory().expect("open db in memory");
+        let res = serialize_db(&conn);
+        assert!(
+            res.is_ok(),
+            "Expected serialization to pass. Res: {:?}",
+            res
+        );
+    }
+
+
+    #[test]
+    fn test_deserialize_empty_db() {
+        let conn = Connection::open_in_memory().expect("open db in memory");
+        let data = serialize_db(&conn).expect("serialize db");
+
+        let data_copy = data.to_vec();
+        let mut write_to = Connection::open_in_memory().unwrap();
+        let res = deserialize_db(&mut write_to, data);
+        assert!(
+            res.is_ok(),
+            "Expected raw memory deserialization to pass. Res: {:?}",
+            res
+        );
+
+        // Try deserialize using the memory
+        let data = SqliteMemory::from_slice(&data_copy).expect("Create memory.");
+        let mut write_to = Connection::open_in_memory().unwrap();
+        let res = deserialize_db(&mut write_to, data);
+        assert!(
+            res.is_ok(),
+            "Expected owned memory deserialization to pass. Res: {:?}",
             res
         );
     }
