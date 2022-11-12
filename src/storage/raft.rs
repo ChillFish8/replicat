@@ -181,16 +181,34 @@ pub struct RaftStore {
 }
 
 impl RaftStore {
+    /// Open a new [RaftStore] instance with a given base path and primary state path.
+    ///
+    /// The `base_path` should be a folder which contains the `log.db` and `snapshot.db`
+    /// instances.
+    ///
+    /// The `state_store` path can be any valid path accepted by SQLite, this includes
+    /// `:memory:` for creating in-memory databases.
+    ///
+    /// If `state_store` is `None`, this will use the `log.db` file for the primary data as well,
+    /// this may not be ideal for larger workloads.
+    ///
+    /// The `base_path` must already exist at the time of opening the store.
     pub async fn open(
-        base_path: &Path,
-        state_store: &Path,
+        base_path: impl AsRef<Path>,
+        state_store: Option<impl AsRef<Path>>,
     ) -> Result<Self, anyhow::Error> {
+        let base_path = base_path.as_ref();
         let log_store = base_path.join("log.db");
         let snapshot_store = base_path.join("snapshot.db");
 
         let log = StorageHandle::open(log_store).await?;
         let snapshot_handle = StorageHandle::open(snapshot_store).await?;
-        let data = StorageHandle::open(state_store).await?;
+
+        let data = if let Some(path) = state_store {
+            StorageHandle::open(path.as_ref()).await?
+        } else {
+            log.clone()
+        };
 
         setup_log_store(&log).await?;
         setup_snapshot_store(&snapshot_handle).await?;
@@ -201,6 +219,19 @@ impl RaftStore {
             snapshot_handle,
             state_machine,
         })
+    }
+
+    /// Open a new [RaftStore] instance with a given base path and a in-memory state.
+    ///
+    /// This assumes that all the data in the store can be loaded into memory and
+    /// that the Raft log can re-create the state that was last applied to it.
+    ///
+    /// The `base_path` should be a folder which contains the `log.db` and `snapshot.db`
+    /// instances.
+    ///
+    /// The `base_path` must already exist at the time of opening the store.
+    pub async fn open_with_mem_state(base_path: &Path) -> Result<Self, anyhow::Error> {
+        Self::open(base_path, Some(":memory:")).await
     }
 
     async fn get_last_purged_log_id(&self) -> StorageResult<Option<LogId<NodeId>>> {
