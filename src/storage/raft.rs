@@ -4,6 +4,7 @@ use std::io::Cursor;
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use openraft::storage::{LogState, Snapshot};
 use openraft::{
@@ -51,7 +52,7 @@ static REPLICAT_KV_TABLE: &str = r#"
 "#;
 static REPLICAT_RAFT_LOGS_TABLE: &str = r#"
     CREATE TABLE IF NOT EXISTS replicat_raft_logs (
-        log_index BIGINT,
+        log_index BIGINT PRIMARY KEY,
         node_id BIGINT,
         term BIGINT,
         entry BLOB
@@ -78,26 +79,31 @@ pub enum Request {
     },
 }
 
+#[instrument("create-snapshot", skip_all)]
 /// Creates a on-disk snapshot of the current statemachine.
 async fn create_snapshot(
     conn: &StorageHandle,
     from: &StorageHandle,
     meta: &SnapshotMeta<NodeId, BasicNode>,
 ) -> Result<SqliteMemory, anyhow::Error> {
+    let start = Instant::now();
     if let Some(data) = from.serialize().await? {
         conn.load_from_serialized(data).await?;
     }
 
     write_snapshot_meta(conn, meta).await?;
 
+    info!(elapsed = ?start.elapsed(), "Created snapshot.");
+
     Ok(conn.serialize().await?.unwrap())
 }
 
+#[instrument("write-snapshot-meta", skip(conn))]
 async fn write_snapshot_meta(
     conn: &StorageHandle,
     meta: &SnapshotMeta<NodeId, BasicNode>,
 ) -> Result<(), anyhow::Error> {
-    let meta = rmp_serde::to_vec(meta)?;
+    let meta = to_bytes(meta)?;
     conn.execute(REPLICAT_KV_UPSERT, (SNAPSHOT_META_KEY, meta))
         .await?;
 
@@ -110,7 +116,7 @@ async fn get_snapshot_meta(
     let meta = conn
         .fetch_one::<_, (Vec<u8>,)>(REPLICAT_KV_SELECT_VALUE, (SNAPSHOT_META_KEY,))
         .await?
-        .map(|data| rmp_serde::from_slice(&data.0))
+        .map(|data| from_bytes(&data.0))
         .transpose()?;
 
     Ok(meta)
@@ -137,8 +143,9 @@ impl StateMachine {
         self.last_membership.read().clone()
     }
 
+    #[instrument("set-last-log", skip(self))]
     pub async fn set_last_applied_log(&self, log: LogId<NodeId>) -> StorageResult<()> {
-        let raw = rmp_serde::to_vec(&log).map_err(store_write_error)?;
+        let raw = to_bytes(&log).map_err(store_write_error)?;
 
         self.data
             .execute(REPLICAT_KV_UPSERT, (LAST_LOG_KEY, raw))
@@ -151,16 +158,19 @@ impl StateMachine {
         Ok(())
     }
 
+    #[instrument("set-last-membership", skip(self))]
     pub async fn set_last_membership(
         &self,
         membership: EffectiveMembership<NodeId, BasicNode>,
     ) -> StorageResult<()> {
-        let raw = rmp_serde::to_vec(&membership).map_err(store_write_error)?;
+        let raw = to_bytes(&membership).map_err(store_write_error)?;
 
         self.data
             .execute(REPLICAT_KV_UPSERT, (LAST_MEMBERSHIP_KEY, raw))
             .await
             .map_err(store_write_error)?;
+
+        info!("Updated membership.");
 
         let mut lock = self.last_membership.write();
         (*lock) = membership;
@@ -237,8 +247,7 @@ impl RaftStore {
     #[cfg(test)]
     /// Open a new [RaftStore] instance with a temporary directory for testing.
     pub async fn open_for_test_mem_state() -> Result<Self, anyhow::Error> {
-        //let path = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
-        let path = Path::new("./mem-states");
+        let path = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         tokio::fs::create_dir_all(&path).await?;
         Self::open_with_mem_state(&path).await
     }
@@ -246,8 +255,7 @@ impl RaftStore {
     #[cfg(test)]
     /// Open a new [RaftStore] instance with a temporary directory for testing.
     pub async fn open_for_test_disk_state() -> Result<Self, anyhow::Error> {
-        //let path = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
-        let path = Path::new("./disk-states");
+        let path = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         tokio::fs::create_dir_all(&path).await?;
         let disk_state_path = path.join("data.db");
         Self::open(&path, Some(disk_state_path)).await
@@ -258,8 +266,19 @@ impl RaftStore {
             .fetch_one::<_, (Vec<u8>,)>(REPLICAT_KV_SELECT_VALUE, (LAST_PURGED_ID_KEY,))
             .await
             .map_err(store_read_error)?
-            .map(|data| rmp_serde::from_slice(&data.0).map_err(store_read_error))
+            .map(|data| from_bytes(&data.0).map_err(store_read_error))
             .transpose()
+    }
+
+    async fn set_last_purged_log_id(&self, log_id: &LogId<NodeId>) -> StorageResult<()> {
+        let data = to_bytes(log_id).map_err(store_write_error)?;
+
+        self.log
+            .execute(REPLICAT_KV_UPSERT, (LAST_PURGED_ID_KEY, data))
+            .await
+            .map_err(store_write_error)?;
+
+        Ok(())
     }
 
     async fn get_and_inc_snapshot_index(&self) -> StorageResult<u64> {
@@ -284,7 +303,7 @@ impl RaftStore {
     }
 
     async fn set_vote(&self, vote: &Vote<NodeId>) -> StorageResult<()> {
-        let data = rmp_serde::to_vec(vote).map_err(store_write_error)?;
+        let data = to_bytes(vote).map_err(store_write_error)?;
 
         self.log
             .execute(REPLICAT_KV_UPSERT, (VOTE_KEY, data))
@@ -299,7 +318,7 @@ impl RaftStore {
             .fetch_one::<_, (Vec<u8>,)>(REPLICAT_KV_SELECT_VALUE, (VOTE_KEY,))
             .await
             .map_err(store_read_error)?
-            .map(|data| rmp_serde::from_slice(&data.0).map_err(store_read_error))
+            .map(|data| from_bytes(&data.0).map_err(store_read_error))
             .transpose()
     }
 
@@ -328,6 +347,7 @@ impl RaftLogReader<TypeConfig> for Arc<RaftStore> {
     async fn get_log_state(&mut self) -> StorageResult<LogState<TypeConfig>> {
         let last_log_id = self.get_last_log_entry().await?;
         let last_purged_log_id = self.get_last_purged_log_id().await?;
+
         let last_log_id = last_log_id.or(last_purged_log_id);
 
         Ok(LogState {
@@ -336,6 +356,7 @@ impl RaftLogReader<TypeConfig> for Arc<RaftStore> {
         })
     }
 
+    #[instrument(name = "raft-get-logs", skip_all, fields(range_start = ?range.start_bound(), range_end = ?range.end_bound()))]
     async fn try_get_log_entries<RB>(
         &mut self,
         range: RB,
@@ -346,14 +367,18 @@ impl RaftLogReader<TypeConfig> for Arc<RaftStore> {
         let query = logs_query(range);
         let entries = self
             .log
-            .fetch_all::<_, (Vec<u8>,)>(query, ())
+            .fetch_all::<_, (Vec<u8>,)>(&query, ())
             .await
             .map_err(log_read_error)?;
 
-        entries
+        let entries = entries
             .into_iter()
-            .map(|(data,)| rmp_serde::from_slice(&data).map_err(log_read_error))
-            .collect::<Result<Vec<_>, StorageError<NodeId>>>()
+            .map(|(data,)| from_bytes(&data).map_err(log_read_error))
+            .collect::<Result<Vec<_>, StorageError<NodeId>>>()?;
+
+        info!(query = %query, "Got logs.");
+
+        Ok(entries)
     }
 }
 
@@ -362,6 +387,8 @@ impl RaftSnapshotBuilder<TypeConfig, Cursor<Vec<u8>>> for Arc<RaftStore> {
     async fn build_snapshot(
         &mut self,
     ) -> StorageResult<Snapshot<NodeId, BasicNode, Cursor<Vec<u8>>>> {
+        let start = Instant::now();
+
         let last_applied_log = self.state_machine.last_applied_log();
         let last_membership = self.state_machine.last_membership();
 
@@ -384,6 +411,14 @@ impl RaftSnapshotBuilder<TypeConfig, Cursor<Vec<u8>>> for Arc<RaftStore> {
                 .await
                 .map_err(create_snapshot_err)?;
 
+        let size = humansize::format_size(data.len(), humansize::DECIMAL);
+        info!(
+            elasped = ?start.elapsed(),
+            num_bytes = data.len(),
+            "Built snapshot containing {} of data.",
+            size
+        );
+
         Ok(Snapshot {
             meta,
             snapshot: Box::new(Cursor::new(data.to_vec())),
@@ -397,10 +432,12 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
     type LogReader = Self;
     type SnapshotBuilder = Self;
 
+    #[instrument("raft-save-vote", skip(self))]
     async fn save_vote(&mut self, vote: &Vote<NodeId>) -> StorageResult<()> {
         self.set_vote(vote).await
     }
 
+    #[instrument("raft-read-vote", skip(self))]
     async fn read_vote(&mut self) -> StorageResult<Option<Vote<NodeId>>> {
         self.get_vote().await
     }
@@ -409,19 +446,30 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
         self.clone()
     }
 
+    #[instrument("raft-append-log", skip(self), feilds(num_entries = entries.len()))]
     async fn append_to_log(
         &mut self,
         entries: &[&Entry<TypeConfig>],
     ) -> StorageResult<()> {
-        let qry = "INSERT INTO replicat_raft_logs (node_id, log_index, term, entry) VALUES (?, ?, ?, ?);";
+        let start = Instant::now();
+
+        let qry = r#"
+            INSERT INTO replicat_raft_logs (node_id, log_index, term, entry)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(log_index) DO UPDATE SET
+                node_id = excluded.node_id,
+                term = excluded.term,
+                entry = excluded.entry
+            WHERE log_index = excluded.log_index;
+        "#;
 
         for entry in entries {
-            let entry_data = rmp_serde::to_vec(entry).map_err(log_write_error)?;
+            let entry_data = to_bytes(entry).map_err(log_write_error)?;
             let node_id = entry.log_id.leader_id.node_id;
             let term = entry.log_id.leader_id.term;
             let log_index = entry.log_id.index;
 
-            let params = (node_id, term, log_index, entry_data);
+            let params = (node_id, log_index, term, entry_data);
 
             self.log
                 .execute(qry, params)
@@ -429,30 +477,46 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
                 .map_err(log_write_error)?;
         }
 
+        debug!(elasped = ?start.elapsed(), "Added entries to log.");
+
         Ok(())
     }
 
+    #[instrument("raft-delete-logs-since", skip(self))]
     async fn delete_conflict_logs_since(
         &mut self,
         log_id: LogId<NodeId>,
     ) -> StorageResult<()> {
-        let qry = "DELETE FROM replicat_raft_logs WHERE log_index >= ?";
+        let start = Instant::now();
 
-        self.log
+        let qry = "DELETE FROM replicat_raft_logs WHERE log_index >= ?;";
+
+        let num_rows = self
+            .log
             .execute(qry, (log_id.index,))
             .await
             .map_err(log_write_error)?;
+
+        info!(elasped = ?start.elapsed(), rows_removed = num_rows, "Purged conflicting logs.");
 
         Ok(())
     }
 
+    #[instrument("raft-purge-logs-upto", skip(self))]
     async fn purge_logs_upto(&mut self, log_id: LogId<NodeId>) -> StorageResult<()> {
+        let start = Instant::now();
+
+        self.set_last_purged_log_id(&log_id).await?;
+
         let qry = "DELETE FROM replicat_raft_logs WHERE log_index <= ?";
 
-        self.log
+        let num_rows = self
+            .log
             .execute(qry, (log_id.index,))
             .await
             .map_err(log_write_error)?;
+
+        info!(elasped = ?start.elapsed(), rows_removed = num_rows, "Purged old logs.");
 
         Ok(())
     }
@@ -469,10 +533,12 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
         ))
     }
 
+    #[instrument("raft-apply-state-machine", skip(self), feilds(num_entries = entries.len()))]
     async fn apply_to_state_machine(
         &mut self,
         entries: &[&Entry<TypeConfig>],
     ) -> StorageResult<Vec<Response>> {
+        let start = Instant::now();
         let mut res = Vec::with_capacity(entries.len());
 
         for entry in entries {
@@ -504,6 +570,8 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
             };
         }
 
+        info!(elasped = ?start.elapsed(), "Applied logs to live state.");
+
         Ok(res)
     }
 
@@ -517,11 +585,14 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
         Ok(Box::new(Cursor::new(Vec::new())))
     }
 
+    #[instrument("raft-install-snapshot", skip(self, snapshot))]
     async fn install_snapshot(
         &mut self,
         meta: &SnapshotMeta<NodeId, BasicNode>,
         snapshot: Box<Self::SnapshotData>,
     ) -> StorageResult<()> {
+        let start = Instant::now();
+
         let mem = SqliteMemory::from_slice(&snapshot.into_inner())
             .map_err(create_snapshot_err)?;
 
@@ -533,6 +604,8 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
         write_snapshot_meta(&self.snapshot_handle, meta)
             .await
             .map_err(create_snapshot_err)?;
+
+        info!(elasped = ?start.elapsed(), "Installed latest snapshot.");
 
         Ok(())
     }
@@ -641,13 +714,13 @@ async fn create_state_machine(
     let last_applied_log = data
         .fetch_one::<_, (Vec<u8>,)>(REPLICAT_KV_SELECT_VALUE, (LAST_LOG_KEY,))
         .await?
-        .map(|data| rmp_serde::from_slice(&data.0))
+        .map(|data| from_bytes(&data.0))
         .transpose()?;
 
     let last_membership = data
         .fetch_one::<_, (Vec<u8>,)>(REPLICAT_KV_SELECT_VALUE, (LAST_MEMBERSHIP_KEY,))
         .await?
-        .map(|data| rmp_serde::from_slice(&data.0))
+        .map(|data| from_bytes(&data.0))
         .transpose()?;
 
     Ok(StateMachine {
@@ -680,12 +753,21 @@ async fn setup_snapshot_store(conn: &StorageHandle) -> rusqlite::Result<()> {
     Ok(())
 }
 
+fn to_bytes<T: Serialize>(v: &T) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+    rmp_serde::to_vec(v)
+}
+
+fn from_bytes<'a, T: Deserialize<'a>>(buf: &'a [u8]) -> Result<T, rmp_serde::decode::Error> {
+    rmp_serde::from_slice(buf)
+}
 
 #[cfg(test)]
 mod tests {
     use std::future::Future;
+
     use async_trait::async_trait;
     use openraft::testing::StoreBuilder;
+
     use super::*;
 
     struct RaftStoreMemStateBuilder {}
@@ -695,9 +777,11 @@ mod tests {
         async fn run_test<Fun, Ret, Res>(&self, t: Fun) -> StorageResult<Ret>
         where
             Res: Future<Output = StorageResult<Ret>> + Send,
-            Fun: Fn(Arc<RaftStore>) -> Res + Sync + Send
+            Fun: Fn(Arc<RaftStore>) -> Res + Sync + Send,
         {
-            let store = RaftStore::open_for_test_mem_state().await.expect("create raft store");
+            let store = RaftStore::open_for_test_mem_state()
+                .await
+                .expect("create raft store");
             t(store.into()).await
         }
     }
@@ -709,21 +793,25 @@ mod tests {
         async fn run_test<Fun, Ret, Res>(&self, t: Fun) -> StorageResult<Ret>
         where
             Res: Future<Output = StorageResult<Ret>> + Send,
-            Fun: Fn(Arc<RaftStore>) -> Res + Sync + Send
+            Fun: Fn(Arc<RaftStore>) -> Res + Sync + Send,
         {
-            let store = RaftStore::open_for_test_disk_state().await.expect("create raft store");
+            let store = RaftStore::open_for_test_disk_state()
+                .await
+                .expect("create raft store");
             t(store.into()).await
         }
     }
 
     #[test]
     pub fn test_raft_store_mem_state() -> anyhow::Result<()> {
+        let _ = tracing_subscriber::fmt::try_init();
         openraft::testing::Suite::test_all(RaftStoreMemStateBuilder {})?;
         Ok(())
     }
 
     #[test]
     pub fn test_raft_store_disk_state() -> anyhow::Result<()> {
+        let _ = tracing_subscriber::fmt::try_init();
         openraft::testing::Suite::test_all(RaftStoreDiskStateBuilder {})?;
         Ok(())
     }

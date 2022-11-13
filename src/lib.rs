@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate tracing;
+
 mod storage;
 
 pub use storage::{
