@@ -757,7 +757,9 @@ fn to_bytes<T: Serialize>(v: &T) -> Result<Vec<u8>, rmp_serde::encode::Error> {
     rmp_serde::to_vec(v)
 }
 
-fn from_bytes<'a, T: Deserialize<'a>>(buf: &'a [u8]) -> Result<T, rmp_serde::decode::Error> {
+fn from_bytes<'a, T: Deserialize<'a>>(
+    buf: &'a [u8],
+) -> Result<T, rmp_serde::decode::Error> {
     rmp_serde::from_slice(buf)
 }
 
