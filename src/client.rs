@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 use std::sync::Arc;
-use parking_lot::RwLock;
+
 use anyhow::Result;
+use parking_lot::RwLock;
 use rusqlite::Params;
 use tonic::Status;
 
-use crate::{FromRow, NodeId, ReplicatNetwork, rpc, StorageHandle};
 use crate::rpc::RpcClient;
 use crate::storage::params::IntoTransportableParams;
+use crate::{rpc, FromRow, NodeId, ReplicatNetwork, StorageHandle};
 
 #[derive(Clone)]
 pub struct ReplicatClient {
@@ -39,17 +40,23 @@ impl ReplicatClient {
     }
 
     fn get_leader_client(&self) -> Result<RpcClient, rpc::Error> {
-        let (node_id, addr) = {
-            self.leader.read().clone()
-        };
+        let (node_id, addr) = { self.leader.read().clone() };
 
         self.network
             .get_or_connect_client(node_id, &addr)
-            .map_err(|e| rpc::Error::NetworkError(Status::unavailable("Unable to connect to remote client")))
+            .map_err(|e| {
+                rpc::Error::NetworkError(Status::unavailable(
+                    "Unable to connect to remote client",
+                ))
+            })
     }
 
     /// Fetch a single row from a given SQL statement with some provided parameters.
-    pub async fn fetch_one<T, P>(&self, sql: impl AsRef<str>, params: P) -> rusqlite::Result<Option<T>>
+    pub async fn fetch_one<T, P>(
+        &self,
+        sql: impl AsRef<str>,
+        params: P,
+    ) -> rusqlite::Result<Option<T>>
     where
         T: FromRow + Send + 'static,
         P: Params + Send + 'static,
@@ -58,7 +65,11 @@ impl ReplicatClient {
     }
 
     /// Fetch a single row from a given SQL statement with some provided parameters.
-    pub async fn fetch_all<T, P>(&self, sql: impl AsRef<str>, params: P) -> rusqlite::Result<Vec<T>>
+    pub async fn fetch_all<T, P>(
+        &self,
+        sql: impl AsRef<str>,
+        params: P,
+    ) -> rusqlite::Result<Vec<T>>
     where
         T: FromRow + Send + 'static,
         P: Params + Send + 'static,
@@ -69,7 +80,11 @@ impl ReplicatClient {
     /// Execute a SQL statement with some provided parameters.
     ///
     /// This is executed on the leader node, changes may not be immediately reflected.
-    pub async fn execute<T, P>(&self, sql: impl Into<String>, params: P) -> Result<(), rpc::Error>
+    pub async fn execute<T, P>(
+        &self,
+        sql: impl Into<String>,
+        params: P,
+    ) -> Result<(), rpc::Error>
     where
         T: FromRow + Send + 'static,
         P: IntoTransportableParams,

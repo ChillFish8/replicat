@@ -31,9 +31,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::storage::params::TransportableParam;
 use crate::storage::SqliteMemory;
-use crate::{NodeId, StorageHandle, TypeConfig};
-use crate::{to_bytes, from_bytes};
-
+use crate::{from_bytes, to_bytes, NodeId, StorageHandle, TypeConfig};
 
 type StorageResult<T> = Result<T, StorageError<NodeId>>;
 
@@ -415,9 +413,10 @@ impl RaftSnapshotBuilder<TypeConfig, Cursor<Vec<u8>>> for Arc<RaftStore> {
             snapshot_id,
         };
 
-        let snapshot = create_snapshot(&self.snapshot_path, &self.state_machine.data, &meta)
-            .await
-            .map_err(create_snapshot_err)?;
+        let snapshot =
+            create_snapshot(&self.snapshot_path, &self.state_machine.data, &meta)
+                .await
+                .map_err(create_snapshot_err)?;
 
         let size = humansize::format_size(snapshot.len(), humansize::DECIMAL);
         info!(
@@ -604,7 +603,8 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
         let mem = SqliteMemory::from_slice(&snapshot.into_inner())
             .map_err(create_snapshot_err)?;
 
-        self.state_machine.data
+        self.state_machine
+            .data
             .load_from_serialized(mem)
             .await
             .map_err(create_snapshot_err)?;
@@ -633,7 +633,7 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
         let snapshot = match tokio::fs::read(&self.snapshot_path).await {
             Ok(data) => Some(Snapshot {
                 meta,
-                snapshot: Box::new(Cursor::new(data))
+                snapshot: Box::new(Cursor::new(data)),
             }),
             Err(e) if e.kind() == ErrorKind::NotFound => None,
             Err(e) => return Err(create_snapshot_err(e)),

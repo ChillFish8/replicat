@@ -1,13 +1,36 @@
 use std::ops::Deref;
 use std::sync::Arc;
-use openraft::{BasicNode, raft};
-use openraft::error::{AddLearnerError, AppendEntriesError, ChangeMembershipError, ClientWriteError, Fatal, ForwardToLeader, InstallSnapshotError, NetworkError, VoteError};
+
+use openraft::error::{
+    AddLearnerError,
+    AppendEntriesError,
+    ChangeMembershipError,
+    ClientWriteError,
+    Fatal,
+    ForwardToLeader,
+    InstallSnapshotError,
+    NetworkError,
+    VoteError,
+};
+use openraft::{raft, BasicNode};
 use serde::Serialize;
 use tonic::{Code, Request, Response, Status};
 
 use crate::rpc::rpc_models::cluster_rpc_server::ClusterRpc;
-use crate::rpc::rpc_models::{AppendEntriesRequest, ChangeMembershipRequest, InstallSnapshotRequest, LogId, MetricsRequest, MutateRequest, Node, RpcError, RpcResponse, Vote, VoteRequest};
-use crate::{from_bytes, NodeId, ReplicatRaft, to_bytes};
+use crate::rpc::rpc_models::{
+    AppendEntriesRequest,
+    ChangeMembershipRequest,
+    InstallSnapshotRequest,
+    LogId,
+    MetricsRequest,
+    MutateRequest,
+    Node,
+    RpcError,
+    RpcResponse,
+    Vote,
+    VoteRequest,
+};
+use crate::{from_bytes, to_bytes, NodeId, ReplicatRaft};
 
 pub struct RpcServer {
     raft: Arc<ReplicatRaft>,
@@ -31,16 +54,14 @@ impl ClusterRpc for RpcServer {
             leader_commit: request.leader_commit.map(openraft::LogId::from),
         };
 
-        let res = self.raft
-            .append_entries(rpc)
-            .await;
+        let res = self.raft.append_entries(rpc).await;
 
         let resp = match res {
             Ok(res) => RpcResponse::ok(res)?,
             Err(e) => {
                 let AppendEntriesError::Fatal(error) = e;
                 fatal_resp(error)?
-            }
+            },
         };
 
         Ok(Response::new(resp))
@@ -63,28 +84,24 @@ impl ClusterRpc for RpcServer {
             done: request.done,
         };
 
-        let res = self.raft
-            .install_snapshot(rpc)
-            .await;
+        let res = self.raft.install_snapshot(rpc).await;
 
         let resp = match res {
             Ok(res) => RpcResponse::ok(res)?,
-            Err(e) => {
-                match e {
-                    InstallSnapshotError::SnapshotMismatch(error) => {
-                         let data = to_bytes(&error)
-                             .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+            Err(e) => match e {
+                InstallSnapshotError::SnapshotMismatch(error) => {
+                    let data = to_bytes(&error)
+                        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
 
-                         RpcResponse {
-                             error: RpcError::SnapshotMismatch as _,
-                             leader: None,
-                             message: "The provided snapshot does not match.".to_string(),
-                             additional_data: data,
-                         }
+                    RpcResponse {
+                        error: RpcError::SnapshotMismatch as _,
+                        leader: None,
+                        message: "The provided snapshot does not match.".to_string(),
+                        additional_data: data,
                     }
-                    InstallSnapshotError::Fatal(error) => fatal_resp(error)?,
-                }
-            }
+                },
+                InstallSnapshotError::Fatal(error) => fatal_resp(error)?,
+            },
         };
 
         Ok(Response::new(resp))
@@ -102,16 +119,14 @@ impl ClusterRpc for RpcServer {
             last_log_id: request.last_log_id.map(openraft::LogId::from),
         };
 
-        let res = self.raft
-            .vote(rpc)
-            .await;
+        let res = self.raft.vote(rpc).await;
 
         let resp = match res {
             Ok(res) => RpcResponse::ok(res)?,
             Err(e) => {
                 let VoteError::Fatal(error) = e;
                 fatal_resp(error)?
-            }
+            },
         };
 
         Ok(Response::new(resp))
@@ -125,22 +140,17 @@ impl ClusterRpc for RpcServer {
 
         let basic_node = BasicNode::new(node.rpc_addr);
 
-        let res = self.raft
-            .add_learner(node.id, basic_node, false)
-            .await;
+        let res = self.raft.add_learner(node.id, basic_node, false).await;
 
         let resp = match res {
             Ok(res) => RpcResponse::ok(res)?,
-            Err(e) => {
-                 match e {
-                     AddLearnerError::ForwardToLeader(leader) =>
-                        forward_to_leader_resp(leader)?,
-                     AddLearnerError::NetworkError(error) =>
-                        network_error_resp(error)?,
-                     AddLearnerError::Fatal(error) =>
-                        fatal_resp(error)?,
-                 }
-            }
+            Err(e) => match e {
+                AddLearnerError::ForwardToLeader(leader) => {
+                    forward_to_leader_resp(leader)?
+                },
+                AddLearnerError::NetworkError(error) => network_error_resp(error)?,
+                AddLearnerError::Fatal(error) => fatal_resp(error)?,
+            },
         };
 
         Ok(Response::new(resp))
@@ -152,12 +162,9 @@ impl ClusterRpc for RpcServer {
     ) -> Result<Response<RpcResponse>, Status> {
         let request = request.into_inner();
 
-        let res = self.raft
-            .change_membership(
-                request.members,
-                true,
-                true,
-            )
+        let res = self
+            .raft
+            .change_membership(request.members, true, true)
             .await;
 
         let resp = match res {
@@ -186,10 +193,11 @@ impl ClusterRpc for RpcServer {
         let params = from_bytes(&request.parameters)
             .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
 
-        let req = crate::storage::Request::Execute { sql: request.sql, params };
-        let res = self.raft
-            .client_write(req)
-            .await;
+        let req = crate::storage::Request::Execute {
+            sql: request.sql,
+            params,
+        };
+        let res = self.raft.client_write(req).await;
 
         let resp = match res {
             Ok(res) => RpcResponse::ok(res)?,
@@ -200,17 +208,16 @@ impl ClusterRpc for RpcServer {
     }
 }
 
-
 impl RpcResponse {
     fn ok(v: impl Serialize) -> Result<Self, Status> {
-        let data = to_bytes(&v)
-            .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+        let data =
+            to_bytes(&v).map_err(|e| Status::new(Code::Internal, e.to_string()))?;
 
         Ok(RpcResponse {
             error: RpcError::None as _,
             leader: None,
             message: "Request OK".to_string(),
-            additional_data: data
+            additional_data: data,
         })
     }
 }
@@ -237,10 +244,16 @@ impl From<LogId> for openraft::LogId<NodeId> {
     }
 }
 
-fn forward_to_leader_resp(leader: ForwardToLeader<NodeId, BasicNode>) -> Result<RpcResponse, Status> {
-    let leader = leader.leader_id
-         .and_then(|id| Some((id, leader.leader_node?)))
-         .map(|(id, node)| Node { id, rpc_addr: node.addr });
+fn forward_to_leader_resp(
+    leader: ForwardToLeader<NodeId, BasicNode>,
+) -> Result<RpcResponse, Status> {
+    let leader = leader
+        .leader_id
+        .and_then(|id| Some((id, leader.leader_node?)))
+        .map(|(id, node)| Node {
+            id,
+            rpc_addr: node.addr,
+        });
 
     Ok(RpcResponse {
         error: RpcError::ForwardToLeader as _,
@@ -250,49 +263,50 @@ fn forward_to_leader_resp(leader: ForwardToLeader<NodeId, BasicNode>) -> Result<
     })
 }
 
-fn change_membership_resp(error: ChangeMembershipError<NodeId>) -> Result<RpcResponse, Status> {
-     let data = to_bytes(&error)
-         .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+fn change_membership_resp(
+    error: ChangeMembershipError<NodeId>,
+) -> Result<RpcResponse, Status> {
+    let data =
+        to_bytes(&error).map_err(|e| Status::new(Code::Internal, e.to_string()))?;
 
-     Ok(RpcResponse {
-         error: RpcError::ChangeMembership as _,
-         leader: None,
-         message: "Change the Raft membership.".to_string(),
-         additional_data: data,
-     })
+    Ok(RpcResponse {
+        error: RpcError::ChangeMembership as _,
+        leader: None,
+        message: "Change the Raft membership.".to_string(),
+        additional_data: data,
+    })
 }
 
 fn network_error_resp(error: NetworkError) -> Result<RpcResponse, Status> {
-     let data = to_bytes(&error)
-         .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let data =
+        to_bytes(&error).map_err(|e| Status::new(Code::Internal, e.to_string()))?;
 
-     Ok(RpcResponse {
-         error: RpcError::Network as _,
-         leader: None,
-         message: "A network error has occurred.".to_string(),
-         additional_data: data,
-     })
+    Ok(RpcResponse {
+        error: RpcError::Network as _,
+        leader: None,
+        message: "A network error has occurred.".to_string(),
+        additional_data: data,
+    })
 }
 
 fn fatal_resp(error: Fatal<NodeId>) -> Result<RpcResponse, Status> {
-     let data = to_bytes(&error)
-         .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let data =
+        to_bytes(&error).map_err(|e| Status::new(Code::Internal, e.to_string()))?;
 
-     Ok(RpcResponse {
-         error: RpcError::Fatal as _,
-         leader: None,
-         message: "Fatal error has occurred.".to_string(),
-         additional_data: data,
-     })
+    Ok(RpcResponse {
+        error: RpcError::Fatal as _,
+        leader: None,
+        message: "Fatal error has occurred.".to_string(),
+        additional_data: data,
+    })
 }
 
-fn client_write_resp(error: ClientWriteError<NodeId, BasicNode>) -> Result<RpcResponse, Status> {
-     match error {
-         ClientWriteError::ForwardToLeader(leader) =>
-             forward_to_leader_resp(leader),
-         ClientWriteError::ChangeMembershipError(error) =>
-             change_membership_resp(error),
-         ClientWriteError::Fatal(error) =>
-             fatal_resp(error),
-     }
+fn client_write_resp(
+    error: ClientWriteError<NodeId, BasicNode>,
+) -> Result<RpcResponse, Status> {
+    match error {
+        ClientWriteError::ForwardToLeader(leader) => forward_to_leader_resp(leader),
+        ClientWriteError::ChangeMembershipError(error) => change_membership_resp(error),
+        ClientWriteError::Fatal(error) => fatal_resp(error),
+    }
 }

@@ -79,7 +79,9 @@ pub struct LogId {
     #[prost(uint64, tag = "3")]
     pub index: u64,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
+)]
 #[repr(i32)]
 pub enum RpcError {
     None = 0,
@@ -108,8 +110,8 @@ impl RpcError {
 /// Generated client implementations.
 pub mod cluster_rpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    use tonic::codegen::*;
     #[derive(Debug, Clone)]
     pub struct ClusterRpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -178,15 +180,12 @@ pub mod cluster_rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::AppendEntriesRequest>,
         ) -> Result<tonic::Response<super::RpcResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/rpc_models.ClusterRpc/append_entries",
@@ -197,15 +196,12 @@ pub mod cluster_rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::InstallSnapshotRequest>,
         ) -> Result<tonic::Response<super::RpcResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/rpc_models.ClusterRpc/install_snapshot",
@@ -216,34 +212,27 @@ pub mod cluster_rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::VoteRequest>,
         ) -> Result<tonic::Response<super::RpcResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/rpc_models.ClusterRpc/vote",
-            );
+            let path =
+                http::uri::PathAndQuery::from_static("/rpc_models.ClusterRpc/vote");
             self.inner.unary(request.into_request(), path, codec).await
         }
         pub async fn add_learner(
             &mut self,
             request: impl tonic::IntoRequest<super::Node>,
         ) -> Result<tonic::Response<super::RpcResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/rpc_models.ClusterRpc/add_learner",
@@ -254,15 +243,12 @@ pub mod cluster_rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::ChangeMembershipRequest>,
         ) -> Result<tonic::Response<super::RpcResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/rpc_models.ClusterRpc/change_membership",
@@ -273,15 +259,12 @@ pub mod cluster_rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::MetricsRequest>,
         ) -> Result<tonic::Response<super::RpcResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/rpc_models.ClusterRpc/get_metrics",
@@ -292,15 +275,12 @@ pub mod cluster_rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::MutateRequest>,
         ) -> Result<tonic::Response<super::RpcResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/rpc_models.ClusterRpc/mutate_state",
@@ -407,23 +387,20 @@ pub mod cluster_rpc_server {
                 "/rpc_models.ClusterRpc/append_entries" => {
                     #[allow(non_camel_case_types)]
                     struct append_entriesSvc<T: ClusterRpc>(pub Arc<T>);
-                    impl<
-                        T: ClusterRpc,
-                    > tonic::server::UnaryService<super::AppendEntriesRequest>
-                    for append_entriesSvc<T> {
+                    impl<T: ClusterRpc>
+                        tonic::server::UnaryService<super::AppendEntriesRequest>
+                        for append_entriesSvc<T>
+                    {
                         type Response = super::RpcResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::AppendEntriesRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).append_entries(request).await
-                            };
+                            let fut =
+                                async move { (*inner).append_entries(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -443,27 +420,24 @@ pub mod cluster_rpc_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                }
+                },
                 "/rpc_models.ClusterRpc/install_snapshot" => {
                     #[allow(non_camel_case_types)]
                     struct install_snapshotSvc<T: ClusterRpc>(pub Arc<T>);
-                    impl<
-                        T: ClusterRpc,
-                    > tonic::server::UnaryService<super::InstallSnapshotRequest>
-                    for install_snapshotSvc<T> {
+                    impl<T: ClusterRpc>
+                        tonic::server::UnaryService<super::InstallSnapshotRequest>
+                        for install_snapshotSvc<T>
+                    {
                         type Response = super::RpcResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::InstallSnapshotRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).install_snapshot(request).await
-                            };
+                            let fut =
+                                async move { (*inner).install_snapshot(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -483,17 +457,14 @@ pub mod cluster_rpc_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                }
+                },
                 "/rpc_models.ClusterRpc/vote" => {
                     #[allow(non_camel_case_types)]
                     struct voteSvc<T: ClusterRpc>(pub Arc<T>);
-                    impl<T: ClusterRpc> tonic::server::UnaryService<super::VoteRequest>
-                    for voteSvc<T> {
+                    impl<T: ClusterRpc> tonic::server::UnaryService<super::VoteRequest> for voteSvc<T> {
                         type Response = super::RpcResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::VoteRequest>,
@@ -519,17 +490,14 @@ pub mod cluster_rpc_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                }
+                },
                 "/rpc_models.ClusterRpc/add_learner" => {
                     #[allow(non_camel_case_types)]
                     struct add_learnerSvc<T: ClusterRpc>(pub Arc<T>);
-                    impl<T: ClusterRpc> tonic::server::UnaryService<super::Node>
-                    for add_learnerSvc<T> {
+                    impl<T: ClusterRpc> tonic::server::UnaryService<super::Node> for add_learnerSvc<T> {
                         type Response = super::RpcResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::Node>,
@@ -555,27 +523,24 @@ pub mod cluster_rpc_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                }
+                },
                 "/rpc_models.ClusterRpc/change_membership" => {
                     #[allow(non_camel_case_types)]
                     struct change_membershipSvc<T: ClusterRpc>(pub Arc<T>);
-                    impl<
-                        T: ClusterRpc,
-                    > tonic::server::UnaryService<super::ChangeMembershipRequest>
-                    for change_membershipSvc<T> {
+                    impl<T: ClusterRpc>
+                        tonic::server::UnaryService<super::ChangeMembershipRequest>
+                        for change_membershipSvc<T>
+                    {
                         type Response = super::RpcResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ChangeMembershipRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).change_membership(request).await
-                            };
+                            let fut =
+                                async move { (*inner).change_membership(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -595,19 +560,17 @@ pub mod cluster_rpc_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                }
+                },
                 "/rpc_models.ClusterRpc/get_metrics" => {
                     #[allow(non_camel_case_types)]
                     struct get_metricsSvc<T: ClusterRpc>(pub Arc<T>);
-                    impl<
-                        T: ClusterRpc,
-                    > tonic::server::UnaryService<super::MetricsRequest>
-                    for get_metricsSvc<T> {
+                    impl<T: ClusterRpc>
+                        tonic::server::UnaryService<super::MetricsRequest>
+                        for get_metricsSvc<T>
+                    {
                         type Response = super::RpcResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::MetricsRequest>,
@@ -633,25 +596,23 @@ pub mod cluster_rpc_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                }
+                },
                 "/rpc_models.ClusterRpc/mutate_state" => {
                     #[allow(non_camel_case_types)]
                     struct mutate_stateSvc<T: ClusterRpc>(pub Arc<T>);
                     impl<T: ClusterRpc> tonic::server::UnaryService<super::MutateRequest>
-                    for mutate_stateSvc<T> {
+                        for mutate_stateSvc<T>
+                    {
                         type Response = super::RpcResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::MutateRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move {
-                                (*inner).mutate_state(request).await
-                            };
+                            let fut =
+                                async move { (*inner).mutate_state(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -671,19 +632,15 @@ pub mod cluster_rpc_server {
                         Ok(res)
                     };
                     Box::pin(fut)
-                }
-                _ => {
-                    Box::pin(async move {
-                        Ok(
-                            http::Response::builder()
-                                .status(200)
-                                .header("grpc-status", "12")
-                                .header("content-type", "application/grpc")
-                                .body(empty_body())
-                                .unwrap(),
-                        )
-                    })
-                }
+                },
+                _ => Box::pin(async move {
+                    Ok(http::Response::builder()
+                        .status(200)
+                        .header("grpc-status", "12")
+                        .header("content-type", "application/grpc")
+                        .body(empty_body())
+                        .unwrap())
+                }),
             }
         }
     }

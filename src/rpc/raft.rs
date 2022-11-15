@@ -1,7 +1,14 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
-use openraft::error::{AppendEntriesError, InstallSnapshotError, NetworkError, RPCError, VoteError};
+
+use openraft::error::{
+    AppendEntriesError,
+    InstallSnapshotError,
+    NetworkError,
+    RPCError,
+    VoteError,
+};
 use openraft::raft::{
     AppendEntriesRequest,
     AppendEntriesResponse,
@@ -13,8 +20,8 @@ use openraft::raft::{
 use openraft::{BasicNode, RaftNetwork, RaftNetworkFactory};
 use parking_lot::RwLock;
 
-use crate::{NodeId, TypeConfig};
 use crate::rpc::client::RpcClient;
+use crate::{NodeId, TypeConfig};
 
 pub struct ReplicatNetwork {
     clients: RwLock<HashMap<NodeId, (Cow<'static, str>, RpcClient)>>,
@@ -22,23 +29,21 @@ pub struct ReplicatNetwork {
 
 impl ReplicatNetwork {
     /// Attempts to get an existing handle to the RPC client, or creates a new client.
-    pub(crate) fn get_or_connect_client(&self, node_id: NodeId, addr: &str) -> Result<RpcClient, NetworkError> {
-        let existing = {
-            self.clients
-                .read()
-                .get(&node_id)
-                .cloned()
-        };
+    pub(crate) fn get_or_connect_client(
+        &self,
+        node_id: NodeId,
+        addr: &str,
+    ) -> Result<RpcClient, NetworkError> {
+        let existing = { self.clients.read().get(&node_id).cloned() };
 
         if let Some((addr, client)) = existing {
             if addr == addr {
-                return Ok(client)
+                return Ok(client);
             }
         }
 
         let addr = Cow::Owned(addr.to_string());
-        let client = RpcClient::connect(&addr)
-            .map_err(|e| NetworkError::new(&e))?;
+        let client = RpcClient::connect(&addr).map_err(|e| NetworkError::new(&e))?;
 
         {
             self.clients
