@@ -748,17 +748,6 @@ async fn setup_log_store(conn: &StorageHandle) -> rusqlite::Result<()> {
     Ok(())
 }
 
-async fn setup_snapshot_store(conn: &StorageHandle) -> rusqlite::Result<()> {
-    conn.fetch_one::<_, (String,)>("pragma journal_mode = WAL;", ())
-        .await?;
-    conn.execute("pragma synchronous = normal;", ()).await?;
-    conn.execute("pragma temp_store = memory;", ()).await?;
-
-    conn.execute(REPLICAT_KV_TABLE, ()).await?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use std::future::Future;

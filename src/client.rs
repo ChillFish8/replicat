@@ -66,6 +66,9 @@ impl ReplicatClient {
         self.local_data.fetch_all(sql, params).await
     }
 
+    /// Execute a SQL statement with some provided parameters.
+    ///
+    /// This is executed on the leader node, changes may not be immediately reflected.
     pub async fn execute<T, P>(&self, sql: impl Into<String>, params: P) -> Result<(), rpc::Error>
     where
         T: FromRow + Send + 'static,
