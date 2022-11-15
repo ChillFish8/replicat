@@ -162,16 +162,7 @@ impl ClusterRpc for RpcServer {
 
         let resp = match res {
             Ok(res) => RpcResponse::ok(res)?,
-            Err(e) => {
-                 match e {
-                     ClientWriteError::ForwardToLeader(leader) =>
-                         forward_to_leader_resp(leader)?,
-                     ClientWriteError::ChangeMembershipError(error) =>
-                         change_membership_resp(error)?,
-                     ClientWriteError::Fatal(error) =>
-                         fatal_resp(error)?,
-                 }
-            }
+            Err(error) => client_write_resp(error)?,
         };
 
         Ok(Response::new(resp))
@@ -192,7 +183,20 @@ impl ClusterRpc for RpcServer {
         request: Request<MutateRequest>,
     ) -> Result<Response<RpcResponse>, Status> {
         let request = request.into_inner();
-        todo!()
+        let params = from_bytes(&request.parameters)
+            .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+
+        let req = crate::storage::Request::Execute { sql: request.sql, params };
+        let res = self.raft
+            .client_write(req)
+            .await;
+
+        let resp = match res {
+            Ok(res) => RpcResponse::ok(res)?,
+            Err(error) => client_write_resp(error)?,
+        };
+
+        Ok(Response::new(resp))
     }
 }
 
@@ -280,4 +284,15 @@ fn fatal_resp(error: Fatal<NodeId>) -> Result<RpcResponse, Status> {
          message: "Fatal error has occurred.".to_string(),
          additional_data: data,
      })
+}
+
+fn client_write_resp(error: ClientWriteError<NodeId, BasicNode>) -> Result<RpcResponse, Status> {
+     match error {
+         ClientWriteError::ForwardToLeader(leader) =>
+             forward_to_leader_resp(leader),
+         ClientWriteError::ChangeMembershipError(error) =>
+             change_membership_resp(error),
+         ClientWriteError::Fatal(error) =>
+             fatal_resp(error),
+     }
 }

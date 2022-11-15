@@ -74,7 +74,7 @@ pub struct Response {}
 pub enum Request {
     Execute {
         sql: String,
-        value: Vec<TransportableParam>,
+        params: Vec<TransportableParam>,
     },
 }
 
@@ -557,7 +557,7 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
             match entry.payload {
                 EntryPayload::Blank => res.push(Response::default()),
                 EntryPayload::Normal(ref req) => match req {
-                    Request::Execute { sql, value } => {
+                    Request::Execute { sql, params: value } => {
                         let params = rusqlite::params_from_iter(value.clone());
 
                         self.state_machine

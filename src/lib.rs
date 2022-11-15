@@ -21,6 +21,8 @@ pub use storage::{
 
 use crate::rpc::ReplicatNetwork;
 
+pub use client::ReplicatClient;
+
 pub type NodeId = u64;
 pub type ReplicatRaft = Raft<TypeConfig, Arc<ReplicatNetwork>, Arc<RaftStore>>;
 

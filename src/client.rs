@@ -7,25 +7,25 @@ use tonic::Status;
 
 use crate::{FromRow, NodeId, ReplicatNetwork, rpc, StorageHandle};
 use crate::rpc::RpcClient;
-use crate::storage::params::{IntoTransportableParams, TransportableParam};
+use crate::storage::params::IntoTransportableParams;
 
 #[derive(Clone)]
 pub struct ReplicatClient {
     /// The leader node to send request to.
     ///
     /// All traffic should be sent to the leader in a cluster.
-    pub leader: Arc<RwLock<(NodeId, Cow<'static, str>)>>,
+    leader: Arc<RwLock<(NodeId, Cow<'static, str>)>>,
 
     /// The existing network of nodes.
-    pub network: Arc<ReplicatNetwork>,
+    network: Arc<ReplicatNetwork>,
 
     /// The local state of the system which can be read from.
-    pub local_data: StorageHandle,
+    local_data: StorageHandle,
 }
 
 impl ReplicatClient {
     /// Creates a new client with a given leader node.
-    pub fn new(
+    pub(crate) fn new(
         leader_id: NodeId,
         leader_addr: String,
         network: Arc<ReplicatNetwork>,
@@ -93,7 +93,7 @@ impl ReplicatClient {
                         return Err(rpc::Error::UnknownLeader);
                     }
                 },
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(e),
                 Ok(()) => return Ok(()),
             }
         }
