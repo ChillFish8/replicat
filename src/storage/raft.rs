@@ -1,8 +1,8 @@
 use std::error::Error;
 use std::fmt::{Debug, Display};
-use std::io::Cursor;
+use std::io::{Cursor, ErrorKind};
 use std::ops::RangeBounds;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -27,14 +27,13 @@ use openraft::{
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use tokio::io::AsyncWriteExt;
 
 use crate::storage::params::TransportableParam;
 use crate::storage::SqliteMemory;
-use crate::{NodeId, StorageHandle};
+use crate::{NodeId, StorageHandle, TypeConfig};
+use crate::{to_bytes, from_bytes};
 
-openraft::declare_raft_types!(
-    pub TypeConfig: D = Request, R = Response, NodeId = NodeId, Node = BasicNode
-);
 
 type StorageResult<T> = Result<T, StorageError<NodeId>>;
 
@@ -82,20 +81,31 @@ pub enum Request {
 #[instrument("create-snapshot", skip_all)]
 /// Creates a on-disk snapshot of the current statemachine.
 async fn create_snapshot(
-    conn: &StorageHandle,
+    write_to: &Path,
     from: &StorageHandle,
     meta: &SnapshotMeta<NodeId, BasicNode>,
-) -> Result<SqliteMemory, anyhow::Error> {
+) -> Result<Vec<u8>, anyhow::Error> {
+    let mut snapshot = Vec::new();
     let start = Instant::now();
-    if let Some(data) = from.serialize().await? {
-        conn.load_from_serialized(data).await?;
-    }
 
-    write_snapshot_meta(conn, meta).await?;
+    write_snapshot_meta(from, meta).await?;
+    if let Some(data) = from.serialize().await? {
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(write_to)
+            .await?;
+
+        file.write_all(&data).await?;
+        file.sync_data().await?;
+        file.flush().await?;
+
+        snapshot = data.to_vec();
+    }
 
     info!(elapsed = ?start.elapsed(), "Created snapshot.");
 
-    Ok(conn.serialize().await?.unwrap())
+    Ok(snapshot)
 }
 
 #[instrument("write-snapshot-meta", skip(conn))]
@@ -187,7 +197,8 @@ pub struct RaftStore {
     /// The current Raft state machine.
     state_machine: StateMachine,
 
-    snapshot_handle: StorageHandle,
+    /// The path to the snapshot handle of the system.
+    snapshot_path: PathBuf,
 }
 
 impl RaftStore {
@@ -209,10 +220,9 @@ impl RaftStore {
     ) -> Result<Self, anyhow::Error> {
         let base_path = base_path.as_ref();
         let log_store = base_path.join("log.db");
-        let snapshot_store = base_path.join("snapshot.db");
+        let snapshot_path = base_path.join("snapshot.db");
 
         let log = StorageHandle::open(log_store).await?;
-        let snapshot_handle = StorageHandle::open(snapshot_store).await?;
 
         let data = if let Some(path) = state_store {
             StorageHandle::open(path.as_ref()).await?
@@ -221,13 +231,12 @@ impl RaftStore {
         };
 
         setup_log_store(&log).await?;
-        setup_snapshot_store(&snapshot_handle).await?;
         let state_machine = create_state_machine(data).await?;
 
         Ok(Self {
             log,
-            snapshot_handle,
             state_machine,
+            snapshot_path,
         })
     }
 
@@ -406,22 +415,21 @@ impl RaftSnapshotBuilder<TypeConfig, Cursor<Vec<u8>>> for Arc<RaftStore> {
             snapshot_id,
         };
 
-        let data =
-            create_snapshot(&self.snapshot_handle, &self.state_machine.data, &meta)
-                .await
-                .map_err(create_snapshot_err)?;
+        let snapshot = create_snapshot(&self.snapshot_path, &self.state_machine.data, &meta)
+            .await
+            .map_err(create_snapshot_err)?;
 
-        let size = humansize::format_size(data.len(), humansize::DECIMAL);
+        let size = humansize::format_size(snapshot.len(), humansize::DECIMAL);
         info!(
             elasped = ?start.elapsed(),
-            num_bytes = data.len(),
+            num_bytes = snapshot.len(),
             "Built snapshot containing {} of data.",
             size
         );
 
         Ok(Snapshot {
             meta,
-            snapshot: Box::new(Cursor::new(data.to_vec())),
+            snapshot: Box::new(Cursor::new(snapshot)),
         })
     }
 }
@@ -596,12 +604,12 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
         let mem = SqliteMemory::from_slice(&snapshot.into_inner())
             .map_err(create_snapshot_err)?;
 
-        self.snapshot_handle
+        self.state_machine.data
             .load_from_serialized(mem)
             .await
             .map_err(create_snapshot_err)?;
 
-        write_snapshot_meta(&self.snapshot_handle, meta)
+        write_snapshot_meta(&self.state_machine.data, meta)
             .await
             .map_err(create_snapshot_err)?;
 
@@ -613,7 +621,7 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
     async fn get_current_snapshot(
         &mut self,
     ) -> StorageResult<Option<Snapshot<NodeId, BasicNode, Self::SnapshotData>>> {
-        let metadata = get_snapshot_meta(&self.snapshot_handle)
+        let metadata = get_snapshot_meta(&self.state_machine.data)
             .await
             .map_err(create_snapshot_err)?;
 
@@ -622,18 +630,16 @@ impl RaftStorage<TypeConfig> for Arc<RaftStore> {
             Some(meta) => meta,
         };
 
-        let data = self
-            .snapshot_handle
-            .serialize()
-            .await
-            .map_err(create_snapshot_err)?
-            .map(|v| v.to_vec())
-            .unwrap_or_default();
+        let snapshot = match tokio::fs::read(&self.snapshot_path).await {
+            Ok(data) => Some(Snapshot {
+                meta,
+                snapshot: Box::new(Cursor::new(data))
+            }),
+            Err(e) if e.kind() == ErrorKind::NotFound => None,
+            Err(e) => return Err(create_snapshot_err(e)),
+        };
 
-        Ok(Some(Snapshot {
-            meta,
-            snapshot: Box::new(Cursor::new(data)),
-        }))
+        Ok(snapshot)
     }
 }
 
@@ -751,16 +757,6 @@ async fn setup_snapshot_store(conn: &StorageHandle) -> rusqlite::Result<()> {
     conn.execute(REPLICAT_KV_TABLE, ()).await?;
 
     Ok(())
-}
-
-fn to_bytes<T: Serialize>(v: &T) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-    rmp_serde::to_vec(v)
-}
-
-fn from_bytes<'a, T: Deserialize<'a>>(
-    buf: &'a [u8],
-) -> Result<T, rmp_serde::decode::Error> {
-    rmp_serde::from_slice(buf)
 }
 
 #[cfg(test)]

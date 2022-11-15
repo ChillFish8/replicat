@@ -10,9 +10,9 @@ use std::ptr;
 use std::ptr::NonNull;
 
 use flume::{self, Receiver, Sender};
-use futures::channel::oneshot;
-pub use raft::{RaftStore, Request, Response, StateMachine, TypeConfig};
+pub use raft::{RaftStore, Request, Response, StateMachine};
 use rusqlite::{ffi, Connection, OptionalExtension, Params, Row};
+use tokio::sync::oneshot;
 
 type Task = Box<dyn FnOnce(&mut Connection) + Send + 'static>;
 

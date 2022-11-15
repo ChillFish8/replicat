@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package rpc_models;
+
+service ClusterRpc {
+  rpc append_entries(AppendEntriesRequest) returns (RpcResponse);
+
+  rpc install_snapshot(InstallSnapshotRequest) returns (RpcResponse);
+
+  rpc vote(VoteRequest) returns (RpcResponse);
+
+  rpc add_learner(Node) returns (RpcResponse);
+
+  rpc change_membership(ChangeMembershipRequest) returns (RpcResponse);
+
+  rpc get_metrics(MetricsRequest) returns (RpcResponse);
+
+  rpc mutate_state(MutateRequest) returns (RpcResponse);
+}
+
+enum RpcError {
+  None = 0;
+  ForwardToLeader = 1;
+  ChangeMembership = 2;
+  Fatal = 3;
+  Network = 4;
+  SnapshotMismatch = 5;
+}
+
+message Node {
+  uint64 id = 1;
+  string rpc_addr = 2;
+}
+
+message RpcResponse {
+  RpcError error = 1;
+  Node leader = 2;
+  string message = 3;
+  bytes additional_data = 4;
+}
+
+message AppendEntriesRequest {
+  Vote vote = 1;
+  optional LogId prev_log_id = 2;
+  bytes entries = 3;
+  optional LogId leader_commit = 4;
+}
+
+message InstallSnapshotRequest {
+  Vote vote = 1;
+  bytes meta = 2;
+  uint64 offset = 3;
+  bytes data = 4;
+  bool done = 5;
+}
+
+message VoteRequest {
+  Vote vote = 1;
+  optional LogId last_log_id = 2;
+}
+
+message ChangeMembershipRequest {
+  repeated uint64 members = 1;
+}
+
+message MetricsRequest {}
+
+message MutateRequest {
+  string sql = 1;
+  bytes parameters = 2;
+}
+
+message Vote {
+  uint64 term = 1;
+  uint64 node_id = 2;
+  bool committed = 3;
+}
+
+message LogId {
+  uint64 term = 1;
+  uint64 node_id = 2;
+  uint64 index = 3;
+}
